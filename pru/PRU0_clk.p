@@ -55,30 +55,45 @@
 
 MEMACCESSPRUDATARAM:
 // this is very important, clearing the STANDBY_INIT bit in the SYSCFG register.
-   LBCO r0, C4, 4, 4
+// Load Byte Burst with Constant Table Offset (LBCO)
+// Store Byte Burst with Constant Table Offset (SBCO)
+  
+ //copy 4 bytes into r0 from memory address C4+4
+   LBCO r0, C4, 4, 4  
+ 
+ //clear bit  r0 = r0 & ~(1<<4) 
    CLR r0, r0, 4
-   SBCO r0, C4, 4, 4      
+
+ //copy 4 bytes from r0 into memory address C4+4  
+   SBCO r0, C4, 4, 4   
 
 
     // Configure the block index register for PRU0 by setting c24_blk_index[7:0] and
     // c25_blk_index[7:0] field to 0x00 and 0x00, respectively.  This will make C24 point
     // to 0x00000000 (PRU0 DRAM) and C25 point to 0x00002000 (PRU1 DRAM).
     MOV       r0, 0x00000000
+
 // Address for the Constant table Programmable Pointer Register 0(CTPPR_0)
 //#define CTBIR_0         0x22020
     MOV       r1, CTBIR_0
+
 //  copy 4 bytes from r0 to the memory address of r1
     ST32      r0, r1
 
 //this is the PRU0 control register address, PRU0CTL+CTREG is the counter address
     mov r2,  PRUCTL
     mov r4, 0
+
+//#define CONST_PRU0DRAM   C24
+//copy 4 bytes from r4 into memory address C24, zero it in this case    
     sbco r4, CONST_PRU0DRAM, 0, 4
 
 init:    
 //zero count register
     mov r3,  0x0
-// copy 4 bytes from r3 to the memory address pf r2+CTREG
+
+//Store Byte Burst (SBBO)
+// copy 4 bytes from r3 to the memory address of r2+CTREG
     sbbo r3, r2, CTREG,4
 
 //enable cycle count
@@ -92,7 +107,11 @@ init:
 
 continue:
      lbco r4, CONST_PRU0DRAM, 0, 4
+
+//Quick Branch if Bit is Set (QBBS)
 // branch to genint if (r4 & (1<<0)) is 1
+// because PRU1 used for daq data input, it can not generate interrupt to arm cpu
+// has to use PRU0 to generate interrupt to inform arm cpu there is enough data in buffer, need to be copied to arm cpu memory. PRU1 will set memory PRU0DRAM to 0x1 when interrupt need to be send.
      qbbs genint, r4, 0
      jmp overflow
 
@@ -106,7 +125,11 @@ overflow:
      lbbo r3,r2,0,4
 //counter overflow, need to restart counting.
 // branch to init if (r3 & (1<<3) is 0
+//else go to continue
      qbbc init, r3, 3
+
+trigger:
+// count trigger input, in one rotation, DO high; in other rotation, DO low. 
      jmp continue       
 
 bye:
