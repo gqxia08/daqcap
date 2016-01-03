@@ -46,14 +46,14 @@
 //
 //  version    0.2
 // *****************************************************************************/
-
+.setcallreg r16.w0
 .origin 0
-.entrypoint MEMACCESSPRUDATARAM
+.entrypoint DAQCLK
 
 #include "PRU_daq.hp"
 
 
-MEMACCESSPRUDATARAM:
+DAQCLK:
 // this is very important, clearing the STANDBY_INIT bit in the SYSCFG register.
 // Load Byte Burst with Constant Table Offset (LBCO)
 // Store Byte Burst with Constant Table Offset (SBCO)
@@ -67,6 +67,11 @@ MEMACCESSPRUDATARAM:
  //copy 4 bytes from r0 into memory address C4+4  
    SBCO r0, C4, 4, 4   
 
+//r11 is turn counter, every turn it is going to increase one
+   MOV r11, 0x00000000
+
+//rotation state requires r10 as a place to hold rotation state. 
+   mov r10, r31
 
     // Configure the block index register for PRU0 by setting c24_blk_index[7:0] and
     // c25_blk_index[7:0] field to 0x00 and 0x00, respectively.  This will make C24 point
@@ -88,7 +93,7 @@ MEMACCESSPRUDATARAM:
 //copy 4 bytes from r4 into memory address C24, zero it in this case    
     sbco r4, CONST_PRU0DRAM, 0, 4
 
-init:    
+INIT:    
 //zero count register
     mov r3,  0x0
 
@@ -105,34 +110,58 @@ init:
     sbbo r3, r2, 0,4
 
 
-continue:
+CONTINUE:
      lbco r4, CONST_PRU0DRAM, 0, 4
 
 //Quick Branch if Bit is Set (QBBS)
 // branch to genint if (r4 & (1<<0)) is 1
 // because PRU1 used for daq data input, it can not generate interrupt to arm cpu
 // has to use PRU0 to generate interrupt to inform arm cpu there is enough data in buffer, need to be copied to arm cpu memory. PRU1 will set memory PRU0DRAM to 0x1 when interrupt need to be send.
-     qbbs genint, r4, 0
-     jmp overflow
+     qbbs GENINT, r4, 0
+     jmp OVERFLOW
 
-genint:
+GENINT:
       MOV R31.b0, PRU0_ARM_INTERRUPT+16
       clr r4.t0
       sbco r4, CONST_PRU0DRAM, 0, 4
 
-overflow:
+OVERFLOW:
 // copy from memory {r2} into register r3, when  
      lbbo r3,r2,0,4
 //counter overflow, need to restart counting.
 // branch to init if (r3 & (1<<3) is 0
 //else go to continue
-     qbbc init, r3, 3
+     qbbc INIT, r3, 3
 
-trigger:
+TRIGGER:
 // count trigger input, in one rotation, DO high; in other rotation, DO low. 
-     jmp continue       
+// this is very important that no false trigger in this line, signal must be clean
+// every high to low means one turn, every other turn switch on/off light.
+// go to LO if (r31 & (1<<11) is 0, only r31.t11==1, r10.t11==0, means one turn    
+     qbbc LO, r31, 11   
+     qbbc ONETURN, r10, 11
+//here,  r31.t11==1, r10.t11==1, so jmp continue
+     jmp CONTINUE
 
-bye:
+LO:
+     mov r10, r31
+     jmp CONTINUE
+
+// every turn, increase r11 by 1.
+ONETURN:
+     mov r10, r31
+     add r11, r11, 1
+
+// if r11 is even, turn off light
+     qbbc DOLO, r11, 1
+DOHI:
+     set r30.t11
+     jmp CONTINUE
+DOLO:
+     clr r30.t11
+     jmp CONTINUE       
+
+BYE:
     // Send notification to Host for program completion
     MOV R31.b0, PRU0_ARM_INTERRUPT+16
 
