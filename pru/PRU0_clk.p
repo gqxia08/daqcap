@@ -101,12 +101,12 @@ TRIGGER:
 // count trigger input, in one rotation, DO high; in other rotation, DO low. 
 // this is very important that no false trigger in this line, signal must be clean
 // every low to high means one turn, every other turn switch on/off light.
-// go to LO if (r31 & (1<<14) is 0, only r31.t14==1, r10.t14==0, means one turn 
+// go to LO if (r31 & (1<<16) is 0, only r31.t16==1, r10.t16==0, means one turn 
 //  r31 is for input, r30 is for output
-// pru0_r30 and r31 bit 14 and 15 are exposed on P8   
-     qbbc LO, r31, 14   
-     qbbc ONETURN, r10, 14
-//here,  r31.t14==1, r10.t14==1, so jmp continue
+// pru0_r30 and r31 bit 16 and r30 bit 7 are exposed on P9   
+     qbbc LO, r31, 16   
+     qbbc ONETURN, r10, 16
+//here,  r31.t16==1, r10.t16==1, so jmp continue
      jmp CONTINUE
 
 LO:
@@ -121,10 +121,10 @@ ONETURN:
 // if r11 is even, turn off light
      qbbc DOLO, r11, 1
 DOHI:
-     set r30.t14
+     set r30.t7
      jmp CONTINUE
 DOLO:
-     clr r30.t14
+     clr r30.t7
      jmp CONTINUE       
 
 BYE:
